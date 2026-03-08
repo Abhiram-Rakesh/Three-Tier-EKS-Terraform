@@ -18,7 +18,7 @@ A production-grade, three-tier fashion e-commerce application deployed on AWS EK
 
 ---
 
-## 📐 Architecture Diagram
+## Architecture Diagram
 
 ```
 Developer pushes code → GitHub (main branch)
@@ -49,22 +49,22 @@ Developer pushes code → GitHub (main branch)
 │  EKS CLUSTER (ap-south-1) — three-tier-cluster           │
 │                                                          │
 │  Namespace: hm-shop                                      │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐      │
-│  │ Frontend    │  │ Backend     │  │ Database    │      │
-│  │ 2 pods      │  │ 2 pods      │  │ 1 pod       │      │
-│  │ React/Nginx │  │ Node.js     │  │ Postgres 15 │      │
-│  │ port 80     │  │ port 5000   │  │ port 5432   │      │
-│  │ HPA: 2–5   │  │ HPA: 2–5   │  │ HPA: 1–2   │      │
-│  └─────────────┘  └─────────────┘  └──────┬──────┘      │
-│                                           │             │
-│  IngressClass (alb) ← AWS ALB             │ PVC → EBS   │
-│  ALB → /api  → backend-service            │ K8s Secret  │
-│      → /     → frontend-service           │ IRSA Auth   │
-│                                           │             │
-│  Namespace: argocd      → ArgoCD Server               │
-│  Namespace: monitoring  → Prometheus + Grafana LB     │
-│  kube-system            → AWS LB Controller           │
-│                         → Cluster Autoscaler          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐       │
+│  │ Frontend    │  │ Backend     │  │ Database    │       │
+│  │ 2 pods      │  │ 2 pods      │  │ 1 pod       │       │
+│  │ React/Nginx │  │ Node.js     │  │ Postgres 15 │       │
+│  │ port 80     │  │ port 5000   │  │ port 5432   │       │
+│  │ HPA: 2–5    │  │ HPA: 2–5    │  │ HPA: 1–2    │       │
+│  └─────────────┘  └─────────────┘  └──────┬──────┘       │
+│                                           │              │
+│  IngressClass (alb) ← AWS ALB             │ PVC → EBS    │
+│  ALB → /api  → backend-service            │ K8s Secret   │
+│      → /     → frontend-service           │ IRSA Auth    │
+│                                           │              │
+│  Namespace: argocd      → ArgoCD Server                  │
+│  Namespace: monitoring  → Prometheus + Grafana LB        │
+│  kube-system            → AWS LB Controller              │
+│                         → Cluster Autoscaler             │
 └──────────────────────────────────────────────────────────┘
         │
         ▼
@@ -74,7 +74,7 @@ User accesses app via raw ALB DNS URL
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 | Layer             | Technology                        | Purpose                                  |
 |-------------------|-----------------------------------|------------------------------------------|
@@ -98,7 +98,7 @@ User accesses app via raw ALB DNS URL
 
 ---
 
-## ✅ Prerequisites
+## Prerequisites
 
 ### Local Machine Requirements
 
@@ -262,7 +262,7 @@ Your IAM user/role needs the following policies attached:
 
 ---
 
-## 🚀 Option A — Automated Deployment (One Command)
+## Option A — Automated Deployment (One Command)
 
 ```bash
 chmod +x install.sh uninstall.sh scripts/setup-jenkins-pipeline.sh
@@ -300,7 +300,7 @@ All URLs and credentials are written to `stack-urls.txt` on completion.
 
 ---
 
-## 🔧 Option B — Manual Step-by-Step Deployment
+## Option B — Manual Step-by-Step Deployment
 
 ---
 
@@ -990,7 +990,7 @@ Pre-imported dashboards (under **H&M Shop** folder):
 - Node Exporter Full (1860)
 - Nginx Ingress (9614)
 
-✅ **Success indicator:** Grafana loads, all 4 dashboards show live data.
+**Success indicator:** Grafana loads, all 4 dashboards show live data.
 
 ---
 
@@ -1025,11 +1025,11 @@ Open the application in your browser:
 echo "Application URL: http://${ALB_URL}"
 ```
 
-✅ **Success indicator:** Browser loads the H&M Fashion clone homepage with product listings.
+**Success indicator:** Browser loads the H&M Fashion clone homepage with product listings.
 
 ---
 
-## 🔄 Day-2 Operations
+## Day-2 Operations
 
 ### View Logs
 
@@ -1108,7 +1108,7 @@ SELECT * FROM orders LIMIT 5;
 
 ---
 
-## 💥 Option C — Jenkins Pipeline Only (Existing Cluster)
+## Option C — Jenkins Pipeline Only (Existing Cluster)
 
 If you already have a running EKS cluster and just need to set up the Jenkins pipeline:
 
@@ -1135,7 +1135,7 @@ chmod +x scripts/setup-jenkins-pipeline.sh
 
 ---
 
-## 🗑️ Teardown
+## Teardown
 
 ### Option A — Automated (Recommended)
 
@@ -1177,7 +1177,7 @@ terraform destroy -auto-approve
 
 ---
 
-## 🔐 Environment Variables Reference
+## Environment Variables Reference
 
 | Variable | Where Set | Value | Notes |
 |----------|-----------|-------|-------|
@@ -1193,7 +1193,7 @@ terraform destroy -auto-approve
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
 ### 1. PostgreSQL pod stuck in `Pending`
 
@@ -1377,55 +1377,3 @@ aws ec2 describe-security-groups \
 ```
 
 ---
-
-## 📁 Repository Structure
-
-```
-three-tier-eks-iac/
-├── .gitignore
-├── README.md                              ← This file
-├── Jenkinsfile                            ← 7-stage CI/CD pipeline
-├── install.sh                             ← One-command full bootstrap
-├── uninstall.sh                           ← One-command full teardown
-├── scripts/
-│   └── setup-jenkins-pipeline.sh         ← Jenkins + SonarQube automation
-├── app/
-│   ├── frontend/                          ← React 18 H&M clone
-│   │   ├── Dockerfile                     ← Multi-stage, non-root Nginx
-│   │   ├── nginx.conf                     ← Reverse proxy to /api
-│   │   ├── package.json
-│   │   └── src/                           ← Components, contexts, services
-│   └── backend/                           ← Node.js/Express REST API
-│       ├── Dockerfile                     ← Non-root Node container
-│       ├── index.js                       ← Express server entry point
-│       ├── db/init.sql                    ← Schema + seed products
-│       ├── routes/                        ← auth, products, orders, health
-│       ├── middleware/authMiddleware.js   ← JWT verification
-│       └── metrics/prometheus.js         ← prom-client metrics
-├── terraform/
-│   ├── providers.tf                       ← AWS + Kubernetes providers
-│   ├── variables.tf                       ← All configurable variables
-│   ├── vpc.tf                             ← VPC, subnets, NAT GWs, Jenkins EC2
-│   ├── eks.tf                             ← EKS cluster + node group + OIDC
-│   ├── ecr.tf                             ← ECR repos + lifecycle policies
-│   ├── irsa.tf                            ← IRSA roles for ECR, ALB, Autoscaler
-│   ├── outputs.tf                         ← All output values
-│   └── alb-controller-policy.json        ← IAM policy for ALB controller
-├── k8s_manifests/
-│   ├── namespace.yaml
-│   ├── storageclass.yaml                  ← hm-ebs-gp2 (WaitForFirstConsumer)
-│   ├── ingressclass.yaml                  ← alb IngressClass
-│   ├── ingress.yaml                       ← ALB with /api and / routing
-│   ├── postgres/                          ← secret, configmap, pvc, deployment, svc, hpa
-│   ├── backend/                           ← serviceaccount (IRSA), secret, deployment, svc, hpa
-│   └── frontend/                          ← serviceaccount (IRSA), deployment, svc, hpa
-├── argocd/
-│   └── application.yaml                   ← GitOps app pointing at k8s_manifests/
-└── monitoring/
-    ├── prometheus-values.yaml             ← kube-prometheus-stack + backend scrape config
-    └── grafana-values.yaml                ← Grafana with 4 pre-imported dashboards
-```
-
----
-
-*Generated for AWS region ap-south-1 (Mumbai). Do not use ap-southeast-1 — all ECR URLs, IRSA ARNs, and region flags in this repository are ap-south-1.*
