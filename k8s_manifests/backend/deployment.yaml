@@ -30,9 +30,9 @@ spec:
       containers:
         - name: backend
 <<<<<<< HEAD
-          image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-backend:17
+          image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-backend:21
 =======
-          image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-backend:17
+          image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-backend:21
 >>>>>>> 45667ae (fix: correct corrupted ECR image URLs and anchor sed pattern)
           ports:
             - containerPort: 5000
