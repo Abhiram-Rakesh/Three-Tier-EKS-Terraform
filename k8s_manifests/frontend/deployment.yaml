@@ -23,19 +23,11 @@ spec:
         tier: presentation
     spec:
       serviceAccountName: frontend-sa
-      securityContext:
-        runAsNonRoot: true
-        runAsUser:    1000
-        runAsGroup:   1000
       containers:
         - name: frontend
-<<<<<<< HEAD
           image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-frontend:17
-=======
-          image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-frontend:17
->>>>>>> 45667ae (fix: correct corrupted ECR image URLs and anchor sed pattern)
           ports:
-            - containerPort: 80
+            - containerPort: 8080
           resources:
             requests:
               cpu:    "100m"
@@ -46,7 +38,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 8080
             initialDelaySeconds: 15
             periodSeconds:       15
             timeoutSeconds:      5
@@ -54,7 +46,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /health
-              port: 80
+              port: 8080
             initialDelaySeconds: 5
             periodSeconds:       10
             timeoutSeconds:      3
