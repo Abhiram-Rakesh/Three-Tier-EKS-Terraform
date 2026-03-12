@@ -52,6 +52,10 @@ pipeline {
           string(credentialsId: 'snyk-token', variable: 'SNYK_TOKEN')
         ]) {
           sh """
+            echo "Installing dependencies for Snyk scan..."
+            (cd app/frontend && npm install --silent 2>/dev/null || npm install)
+            (cd app/backend  && npm install --silent 2>/dev/null || npm install)
+
             snyk auth ${SNYK_TOKEN}
             snyk test --all-projects \
                       --severity-threshold=high \
