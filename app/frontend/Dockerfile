@@ -8,7 +8,7 @@ WORKDIR /app
 
 # Copy package files first for layer caching
 COPY package.json ./
-RUN npm install --legacy-peer-deps
+RUN npm install --legacy-peer-deps && npm install ajv@^8 --legacy-peer-deps
 
 # Copy source and build
 COPY public/ ./public/
