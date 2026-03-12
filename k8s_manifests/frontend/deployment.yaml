@@ -29,7 +29,11 @@ spec:
         runAsGroup:   1000
       containers:
         - name: frontend
-          image: 567776770107.dkr.ecr.567776770107.dkr.ecr.567776770107.dkr.ecr.567776770107.dkr.ecr.567776770107.dkr.ecr.567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-frontend:17
+<<<<<<< HEAD
+          image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-frontend:17
+=======
+          image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-frontend:17
+>>>>>>> 45667ae (fix: correct corrupted ECR image URLs and anchor sed pattern)
           ports:
             - containerPort: 80
           resources:
