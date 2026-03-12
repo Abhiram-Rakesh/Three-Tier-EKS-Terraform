@@ -30,17 +30,15 @@ Developer pushes code → GitHub (main branch)
 │                                                          │
 │  Stage 1: Code Quality Analysis  (SonarQube)             │
 │      ↓                                                   │
-│  Stage 2: Dependency Check       (Snyk)                  │
+│  Stage 2: File System Scan       (Trivy fs)              │
 │      ↓                                                   │
-│  Stage 3: File System Scan       (Trivy fs)              │
+│  Stage 3: Build Docker Images    (frontend + backend)    │
 │      ↓                                                   │
-│  Stage 4: Build Docker Images    (frontend + backend)    │
+│  Stage 4: Push to ECR Private    (both images)           │
 │      ↓                                                   │
-│  Stage 5: Push to ECR Private    (both images)           │
+│  Stage 5: Trivy Image Scan       (ECR images)            │
 │      ↓                                                   │
-│  Stage 6: ECR Image Scan         (Trivy image)           │
-│      ↓                                                   │
-│  Stage 7: Update Deployment YAML → git commit → push     │
+│  Stage 6: Update Deployment YAML → git commit → push     │
 └──────────────────────────────────────────────────────────┘
         │
         │  ArgoCD polls GitHub every 3 min, detects new commit
@@ -83,14 +81,13 @@ User accesses app via raw ALB DNS URL
 | Database          | PostgreSQL 15                     | Relational store, EBS-backed PVC         |
 | Storage           | AWS EBS gp2 (dynamic)             | Persistent volume for Postgres data      |
 | Container Build   | Docker (multi-stage)              | Non-root images, minimal attack surface  |
-| CI                | Jenkins on EC2                    | 7-stage security-hardened pipeline       |
+| CI                | Jenkins on EC2                    | 6-stage security-hardened pipeline       |
 | CD / GitOps       | ArgoCD (in-cluster)               | Polls GitHub, auto-syncs manifests       |
 | IaC               | Terraform >= 1.5                  | VPC, EKS, ECR, IAM, EC2                  |
 | Container Registry| AWS ECR Private                   | Private image storage with scan-on-push  |
 | ECR Auth          | IRSA                              | IAM Role bound to K8s ServiceAccount     |
 | Code Quality      | SonarQube LTS Community           | Static analysis + Quality Gate           |
-| Dependency Scan   | Snyk                              | CVE scanning for npm packages            |
-| Image Scan        | Trivy                             | FS + container image vulnerability scans |
+| Dependency Scan   | Trivy                             | FS + container image vulnerability scans |
 | Monitoring        | Prometheus + Grafana              | Metrics collection + dashboards          |
 | Ingress           | AWS ALB Controller + IngressClass | Internet-facing ALB, path-based routing  |
 | HPA               | autoscaling/v2                    | CPU + memory-based autoscaling           |
@@ -277,14 +274,13 @@ The script runs 9 phases automatically:
 | 2 — Terraform | Provisions EKS, ECR, VPC, IAM, Jenkins EC2 |
 | 3 — EKS Bootstrap | kubeconfig, EBS CSI addon, Metrics Server, StorageClass |
 | 4 — Controllers | AWS ALB Controller, Cluster Autoscaler, IngressClass |
-| 5 — Jenkins | SSH bootstrap of Java, Jenkins, Docker, Trivy, Snyk, SonarScanner |
+| 5 — Jenkins | SSH bootstrap of Java, Jenkins, Docker, Trivy, SonarScanner |
 | 6 — ArgoCD | Install ArgoCD, deploy hm-shop Application |
 | 7 — Monitoring | Prometheus stack + Grafana with LoadBalancer |
 | 8 — Pipeline | Runs setup-jenkins-pipeline.sh (prompts for tokens) |
 | 9 — Verify | Polls for ALB DNS, writes stack-urls.txt |
 
 **Manual inputs you will be prompted for:**
-- Snyk API token (from https://app.snyk.io/account)
 - GitHub username + Personal Access Token
 - AWS IAM credentials for Jenkins CI user
 
@@ -742,12 +738,11 @@ sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 kubectl version --client
 ```
 
-**Node.js 18 + Snyk:**
+**Node.js 18:**
 ```bash
 curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
 sudo apt-get install -y nodejs
-sudo npm install -g snyk
-snyk --version
+node --version
 ```
 
 **SonarScanner 5.0.1.3006:**
@@ -848,10 +843,9 @@ Navigate to: **Jenkins → Manage Jenkins → Credentials → System → Global 
 | `aws-access-key` | Secret text | AWS Access Key ID for `jenkins-ci` IAM user | Never use personal admin keys |
 | `aws-secret-key` | Secret text | AWS Secret Access Key for `jenkins-ci` | Rotate every 90 days |
 | `sonar-token` | Secret text | SonarQube user token from Step 13 | Regenerate if compromised |
-| `snyk-token` | Secret text | Snyk API token from app.snyk.io/account | Bound to your Snyk account |
 | `git-credentials` | Username/Password | GitHub username + PAT | PAT needs `repo` + `admin:repo_hook` scopes |
 
-✅ **Success indicator:** All 5 credentials appear in the global credentials list.
+✅ **Success indicator:** All 4 credentials appear in the global credentials list.
 
 ---
 
@@ -871,7 +865,6 @@ Search for and install each:
 - [ ] `docker-plugin`
 - [ ] `sonar`
 - [ ] `credentials-binding`
-- [ ] `snyk-security-scanner`
 - [ ] `pipeline-utility-steps`
 - [ ] `ws-cleanup`
 - [ ] `build-timeout`
@@ -936,16 +929,15 @@ Watch the pipeline in Jenkins at `http://<JENKINS_IP>:8080/job/hm-fashion-pipeli
 | Stage | What to watch for |
 |-------|-------------------|
 | Stage 1 (SonarQube) | Quality Gate result — must be PASSED |
-| Stage 2 (Snyk) | `✓ Tested X dependencies` |
-| Stage 3 (Trivy FS) | Results table, pipeline continues regardless |
-| Stage 4 (Build) | `Successfully built <image-id>` for both images |
-| Stage 5 (ECR Push) | `The push refers to repository [...]` |
-| Stage 6 (Trivy Image) | Scan results archived as artifacts |
-| Stage 7 (GitOps) | `CI: Update image tags to build-1 [skip ci]` commit appears in GitHub |
+| Stage 2 (Trivy FS) | Results table, pipeline continues regardless |
+| Stage 3 (Build) | `Successfully built <image-id>` for both images |
+| Stage 4 (ECR Push) | `The push refers to repository [...]` |
+| Stage 5 (Trivy Image) | Scan results archived as artifacts |
+| Stage 6 (GitOps) | `CI: Update image tags to build-1 [skip ci]` commit appears in GitHub |
 
-After Stage 7, ArgoCD detects the new commit within 3 minutes and deploys the updated images automatically.
+After Stage 6, ArgoCD detects the new commit within 3 minutes and deploys the updated images automatically.
 
-✅ **Success indicator:** All 7 stages green, ArgoCD application status shows `Synced`.
+✅ **Success indicator:** All 6 stages green, ArgoCD application status shows `Synced`.
 
 ---
 
@@ -1059,7 +1051,7 @@ kubectl get hpa -n hm-shop --watch
 
 ### View Security Scan Results
 
-Trivy and Snyk results are archived as Jenkins build artifacts. Access them at:
+Trivy results are archived as Jenkins build artifacts. Access them at:
 `http://<JENKINS_IP>:8080/job/hm-fashion-pipeline/<BUILD_NUMBER>/artifact/`
 
 ### Trigger Pipeline Manually
@@ -1124,12 +1116,11 @@ chmod +x scripts/setup-jenkins-pipeline.sh
 - Installs 15 Jenkins plugins
 - Starts SonarQube container
 - Configures SonarQube project + token
-- Registers all 5 credentials in Jenkins
+- Registers all 4 credentials in Jenkins
 - Links SonarQube to Jenkins
 - Creates the pipeline job
 
-**Prompts for manual input (3 items):**
-- Snyk API token (requires browser login to app.snyk.io)
+**Prompts for manual input (2 items):**
 - GitHub username + Personal Access Token
 - AWS IAM credentials for jenkins-ci user
 
