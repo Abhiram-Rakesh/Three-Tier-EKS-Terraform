@@ -29,11 +29,7 @@ spec:
         runAsGroup:   1000
       containers:
         - name: backend
-<<<<<<< HEAD
           image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-backend:22
-=======
-          image: 567776770107.dkr.ecr.ap-south-1.amazonaws.com/hm-backend:22
->>>>>>> 45667ae (fix: correct corrupted ECR image URLs and anchor sed pattern)
           ports:
             - containerPort: 5000
           env:
