@@ -14,7 +14,7 @@ A production-grade, three-tier fashion e-commerce application deployed on AWS EK
 | 1 day    | ~$11.52                  |
 | 1 month  | ~$346                    |
 
-> **Always run `./uninstall.sh` when you are finished.** NAT Gateways and EKS nodes accrue charges even when idle.
+> **Always tear down resources when you are finished.** NAT Gateways and EKS nodes accrue charges even when idle. See the [Teardown](#teardown) section.
 
 ---
 
@@ -206,7 +206,7 @@ curl --version  # curl 7.x.x
 
 #### 7. EC2 Key Pair for Jenkins SSH
 
-The install script and setup-jenkins-pipeline.sh SSH into the Jenkins EC2. The key must be named `hm-eks-key` and placed in the repo root.
+An SSH key pair is required to access the Jenkins EC2 for setup (Step 12c).
 
 ```bash
 # Create the key pair in ap-south-1
@@ -217,9 +217,6 @@ aws ec2 create-key-pair \
   --output text > hm-eks-key.pem
 
 chmod 400 hm-eks-key.pem
-
-# Move to repo root
-mv hm-eks-key.pem /path/to/three-tier-eks-iac/
 ```
 
 ✅ **Verify:** `ls -la hm-eks-key.pem` shows `-r--------` permissions.
@@ -228,16 +225,18 @@ mv hm-eks-key.pem /path/to/three-tier-eks-iac/
 
 #### 8. GitHub Repository
 
+Fork or clone this repository under your own GitHub account:
+
 ```bash
-git clone https://github.com/<YOUR_USERNAME>/three-tier-eks-iac.git
-cd three-tier-eks-iac
+git clone https://github.com/<YOUR_USERNAME>/Three-Tier-EKS-Terraform.git
+cd Three-Tier-EKS-Terraform
 ```
 
 Or if creating fresh:
 
 ```bash
 git init
-git remote add origin https://github.com/<YOUR_USERNAME>/three-tier-eks-iac.git
+git remote add origin https://github.com/<YOUR_USERNAME>/Three-Tier-EKS-Terraform.git
 git add . && git commit -m "Initial commit"
 git push -u origin main
 ```
@@ -259,70 +258,29 @@ Your IAM user/role needs the following policies attached:
 
 ---
 
-## Option A — Automated Deployment (One Command)
-
-```bash
-chmod +x install.sh uninstall.sh scripts/setup-jenkins-pipeline.sh
-./install.sh
-```
-
-The script runs 9 phases automatically:
-
-| Phase | Description |
-|-------|-------------|
-| 1 — Preflight | Tool checks, AWS identity, SSH key, git remote |
-| 2 — Terraform | Provisions EKS, ECR, VPC, IAM, Jenkins EC2 |
-| 3 — EKS Bootstrap | kubeconfig, EBS CSI addon, Metrics Server, StorageClass |
-| 4 — Controllers | AWS ALB Controller, Cluster Autoscaler, IngressClass |
-| 5 — Jenkins | SSH bootstrap of Java, Jenkins, Docker, Trivy, SonarScanner |
-| 6 — ArgoCD | Install ArgoCD, deploy hm-shop Application |
-| 7 — Monitoring | Prometheus stack + Grafana with LoadBalancer |
-| 8 — Pipeline | Runs setup-jenkins-pipeline.sh (prompts for tokens) |
-| 9 — Verify | Polls for ALB DNS, writes stack-urls.txt |
-
-**Manual inputs you will be prompted for:**
-- GitHub username + Personal Access Token
-- AWS IAM credentials for Jenkins CI user
-
-**Available flags:**
-```bash
-./install.sh --skip-terraform   # Reuse existing infra
-./install.sh --skip-jenkins     # Skip Jenkins EC2 setup
-./install.sh --skip-monitoring  # Skip Prometheus/Grafana
-./install.sh --dry-run          # Print plan without creating anything
-```
-
-All URLs and credentials are written to `stack-urls.txt` on completion.
-
----
-
-## Option B — Manual Step-by-Step Deployment
+## Deployment — Step-by-Step
 
 ---
 
 ### Step 1 — Clone the Repository
 
-> [AUTO] Handled by: you run this before any script.
-
 ```bash
-git clone https://github.com/<YOUR_USERNAME>/three-tier-eks-iac.git
-cd three-tier-eks-iac
+git clone https://github.com/<YOUR_USERNAME>/Three-Tier-EKS-Terraform.git
+cd Three-Tier-EKS-Terraform
 ```
 
 Expected output:
 ```
-Cloning into 'three-tier-eks-iac'...
+Cloning into 'Three-Tier-EKS-Terraform'...
 remote: Enumerating objects: 87, done.
 Receiving objects: 100% (87/87), done.
 ```
 
-✅ **Success indicator:** `ls` shows Jenkinsfile, install.sh, terraform/, k8s_manifests/, app/
+✅ **Success indicator:** `ls` shows Jenkinsfile, terraform/, k8s_manifests/, app/
 
 ---
 
 ### Step 2 — Provision Infrastructure (Terraform)
-
-> [AUTO] Handled by install.sh Phase 2
 
 ```bash
 cd terraform
@@ -364,8 +322,6 @@ cd ..
 
 ### Step 3 — Configure kubectl
 
-> [AUTO] Handled by install.sh Phase 3
-
 ```bash
 aws eks update-kubeconfig \
   --region ap-south-1 \
@@ -386,8 +342,6 @@ ip-10-0-11-xx.ap-south-1.compute.internal  Ready    <none>   2m    v1.29.x
 ---
 
 ### Step 4 — Install AWS EBS CSI Driver
-
-> [AUTO] Handled by install.sh Phase 3
 
 **Why this is critical:** Without the EBS CSI driver, the PostgreSQL PersistentVolumeClaim will stay in `Pending` state forever. The pod will never start.
 
@@ -430,8 +384,6 @@ ebs-csi-node-xxxxx                   3/3   Running   0   2m
 
 ### Step 5 — Apply StorageClass and IngressClass
 
-> [AUTO] Handled by install.sh Phase 3 & 4
-
 ```bash
 kubectl apply -f k8s_manifests/storageclass.yaml
 kubectl apply -f k8s_manifests/ingressclass.yaml
@@ -454,8 +406,6 @@ alb    ingress.k8s.aws/alb         <none>        5s
 ---
 
 ### Step 6 — Install AWS Load Balancer Controller
-
-> [AUTO] Handled by install.sh Phase 4
 
 ```bash
 # Get VPC ID
@@ -494,8 +444,6 @@ aws-load-balancer-controller   2/2     2            2           60s
 
 ### Step 7 — Install Cluster Autoscaler
 
-> [AUTO] Handled by install.sh Phase 4
-
 ```bash
 helm repo add autoscaler https://kubernetes.github.io/autoscaler
 helm repo update
@@ -517,8 +465,6 @@ kubectl get deployment -n kube-system cluster-autoscaler
 ---
 
 ### Step 8 — Install Metrics Server (Required for HPA)
-
-> [AUTO] Handled by install.sh Phase 3
 
 **Why:** HorizontalPodAutoscaler cannot read CPU/memory metrics without Metrics Server. HPAs will show `<unknown>` targets without it.
 
@@ -542,9 +488,7 @@ ip-10-0-11-xx.ap-south-1.compute.internal  115m         5%     790Mi           2
 
 ### Step 9 — Inject AWS Account ID into Manifests
 
-> [AUTO] Handled by install.sh Phase 2
-
-The K8s manifests contain `<ACCOUNT_ID>` placeholders for ECR image URLs and IRSA role ARNs. Replace them with your real account ID:
+The K8s manifests contain `<YOUR_AWS_ACCOUNT_ID>` placeholders for ECR image URLs and IRSA role ARNs. Replace them with your real account ID:
 
 ```bash
 export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
@@ -552,13 +496,13 @@ export GITHUB_USER=<YOUR_USERNAME>
 
 # Replace in all K8s manifests
 find k8s_manifests/ -name "*.yaml" -exec \
-  sed -i "s|<ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" {} \;
+  sed -i "s|<YOUR_AWS_ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" {} \;
 
 # Replace GitHub username in ArgoCD application
 sed -i "s|<YOUR_USERNAME>|${GITHUB_USER}|g" argocd/application.yaml
 
 # Replace in Jenkinsfile
-sed -i "s|<ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" Jenkinsfile
+sed -i "s|<YOUR_AWS_ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" Jenkinsfile
 sed -i "s|<YOUR_USERNAME>|${GITHUB_USER}|g" Jenkinsfile
 
 # Commit and push so ArgoCD can read the updated manifests
@@ -567,13 +511,11 @@ git commit -m "CI: Inject AWS Account ID ${AWS_ACCOUNT_ID} into manifests"
 git push origin main
 ```
 
-✅ **Success indicator:** `grep '<ACCOUNT_ID>' k8s_manifests/**/*.yaml` returns no output.
+✅ **Success indicator:** `grep '<YOUR_AWS_ACCOUNT_ID>' k8s_manifests/**/*.yaml` returns no output.
 
 ---
 
 ### Step 10 — Install ArgoCD
-
-> [AUTO] Handled by install.sh Phase 6
 
 ```bash
 kubectl create namespace argocd
@@ -610,8 +552,6 @@ kubectl port-forward svc/argocd-server -n argocd 8443:443
 ---
 
 ### Step 11 — Verify Application Pods
-
-> [AUTO] Handled by install.sh Phase 9 (polling)
 
 ```bash
 kubectl get pods -n hm-shop --watch
@@ -659,8 +599,6 @@ hm-shop-ingress   alb     *       k8s-hmshop-xxxx.ap-south-1.elb.amazonaws.com  
 
 ### Step 12 — Set Up Jenkins EC2
 
-> [AUTO] Handled by install.sh Phase 5
-
 #### 12a — Get Jenkins EC2 IP
 
 ```bash
@@ -684,7 +622,7 @@ echo "Jenkins IP: ${JENKINS_IP}"
 
 These are created automatically by Terraform in `vpc.tf`.
 
-#### 12c — Manual Bootstrap (if not using install.sh)
+#### 12c — Bootstrap the Jenkins EC2
 
 SSH into the Jenkins EC2 and install each tool:
 
@@ -792,8 +730,6 @@ sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
 ### Step 13 — Set Up SonarQube
 
-> [AUTO] Handled by scripts/setup-jenkins-pipeline.sh Step 6 & 7
-
 **Start SonarQube on the Jenkins EC2:**
 
 ```bash
@@ -812,7 +748,7 @@ Wait ~60 seconds, then open `http://<JENKINS_IP>:9000`.
 
 **First login:**
 1. Username: `admin`, Password: `admin`
-2. You'll be prompted to change the password → set it to `Sonar@HMShop2024!`
+2. You'll be prompted to change the password → set a strong password of your choice
 3. Click **Create a local project** → Project key: `hm-fashion-clone`, Display name: `H&M Fashion Clone`
 4. Click **Set up project for clean code**
 
@@ -834,8 +770,6 @@ Wait ~60 seconds, then open `http://<JENKINS_IP>:9000`.
 
 ### Step 14 — Configure Jenkins Credentials
 
-> [AUTO] Handled by scripts/setup-jenkins-pipeline.sh Step 9
-
 Navigate to: **Jenkins → Manage Jenkins → Credentials → System → Global credentials → Add Credentials**
 
 | ID | Kind | Value | Security Note |
@@ -850,8 +784,6 @@ Navigate to: **Jenkins → Manage Jenkins → Credentials → System → Global 
 ---
 
 ### Step 15 — Install Jenkins Plugins
-
-> [AUTO] Handled by scripts/setup-jenkins-pipeline.sh Step 5
 
 Navigate to: **Jenkins → Manage Jenkins → Plugins → Available plugins**
 
@@ -880,8 +812,6 @@ Click **Install** and wait for Jenkins to restart.
 
 ### Step 16 — Create Jenkins Pipeline Job
 
-> [AUTO] Handled by scripts/setup-jenkins-pipeline.sh Step 11
-
 1. Jenkins dashboard → **New Item**
 2. Enter name: `hm-fashion-pipeline`
 3. Select **Pipeline** → click **OK**
@@ -889,7 +819,7 @@ Click **Install** and wait for Jenkins to restart.
 5. Under **Pipeline**:
    - Definition: `Pipeline script from SCM`
    - SCM: `Git`
-   - Repository URL: `https://github.com/<YOUR_USERNAME>/three-tier-eks-iac.git`
+   - Repository URL: `https://github.com/<YOUR_USERNAME>/Three-Tier-EKS-Terraform.git`
    - Credentials: select `git-credentials`
    - Branch: `*/main`
    - Script Path: `Jenkinsfile`
@@ -901,9 +831,7 @@ Click **Install** and wait for Jenkins to restart.
 
 ### Step 17 — Configure GitHub Webhook
 
-> **Always manual — this step cannot be automated** (GitHub requires browser 2FA confirmation)
-
-1. Go to: `https://github.com/<YOUR_USERNAME>/three-tier-eks-iac/settings/hooks/new`
+1. Go to: `https://github.com/<YOUR_USERNAME>/Three-Tier-EKS-Terraform/settings/hooks/new`
 2. Fill in:
    - **Payload URL:** `http://<JENKINS_IP>:8080/github-webhook/`
    - **Content type:** `application/json`
@@ -916,8 +844,6 @@ Click **Install** and wait for Jenkins to restart.
 ---
 
 ### Step 18 — Trigger First Pipeline Run
-
-> [AUTO] The webhook handles subsequent runs. This triggers the very first.
 
 ```bash
 git commit --allow-empty -m "CI: trigger first pipeline run"
@@ -942,8 +868,6 @@ After Stage 6, ArgoCD detects the new commit within 3 minutes and deploys the up
 ---
 
 ### Step 19 — Install Monitoring Stack
-
-> [AUTO] Handled by install.sh Phase 7
 
 ```bash
 kubectl create namespace monitoring
@@ -974,7 +898,7 @@ NAME      TYPE           CLUSTER-IP     EXTERNAL-IP                             
 grafana   LoadBalancer   172.20.x.x     abc123.elb.ap-south-1.amazonaws.com           80:30xxx/TCP
 ```
 
-Open `http://<EXTERNAL-IP>` → login with `admin` / `HMGrafana2024!`
+Open `http://<EXTERNAL-IP>` → login with `admin` / (password from `monitoring/grafana-values.yaml` or the one you configured)
 
 Pre-imported dashboards (under **H&M Shop** folder):
 - Kubernetes Cluster (6417)
@@ -1100,50 +1024,9 @@ SELECT * FROM orders LIMIT 5;
 
 ---
 
-## Option C — Jenkins Pipeline Only (Existing Cluster)
-
-If you already have a running EKS cluster and just need to set up the Jenkins pipeline:
-
-```bash
-chmod +x scripts/setup-jenkins-pipeline.sh
-./scripts/setup-jenkins-pipeline.sh
-```
-
-**Automated by the script:**
-- Detects Jenkins EC2 IP via AWS tag
-- Waits for Jenkins HTTP readiness
-- Reads initial admin password via SSH
-- Installs 15 Jenkins plugins
-- Starts SonarQube container
-- Configures SonarQube project + token
-- Registers all 4 credentials in Jenkins
-- Links SonarQube to Jenkins
-- Creates the pipeline job
-
-**Prompts for manual input (2 items):**
-- GitHub username + Personal Access Token
-- AWS IAM credentials for jenkins-ci user
-
----
-
 ## Teardown
 
-### Option A — Automated (Recommended)
-
-```bash
-./uninstall.sh
-```
-
-You'll be prompted to type `destroy` to confirm. The script then:
-1. Uninstalls all Helm releases (Grafana, Prometheus, ALB Controller, Autoscaler)
-2. Deletes Kubernetes namespaces (releases ALBs + PVCs)
-3. Waits for EBS volumes to detach
-4. Purges ECR images
-5. Stops SonarQube container
-6. Runs `terraform destroy`
-7. Cleans up local kubeconfig context
-
-### Option B — Manual (Order Matters!)
+### Manual Teardown (Order Matters!)
 
 ```bash
 # 1. Uninstall Helm releases FIRST (releases cloud resources)
@@ -1172,15 +1055,13 @@ terraform destroy -auto-approve
 
 | Variable | Where Set | Value | Notes |
 |----------|-----------|-------|-------|
-| `AWS_REGION` | install.sh config | `ap-south-1` | All resources in Mumbai |
-| `CLUSTER_NAME` | install.sh config | `three-tier-cluster` | EKS cluster name |
-| `AWS_ACCOUNT_ID` | install.sh auto-detect | Your 12-digit ID | Used for ECR URL construction |
-| `SSH_KEY_PATH` | env override or default | `./hm-eks-key.pem` | Set: `SSH_KEY_PATH=/path/key.pem ./install.sh` |
-| `REGISTRY` | Jenkinsfile env | `<ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com` | Injected by install.sh |
-| `GIT_REPO` | Jenkinsfile env | Your GitHub repo URL | Injected by install.sh |
-| `SONAR_ADMIN_PASS_NEW` | setup-jenkins-pipeline.sh | `Sonar@HMShop2024!` | Change before production use |
-| `DB_PASSWORD` | K8s Secret `backend-secret` | `hmpassword` (base64) | Rotate for real deployments |
-| `JWT_SECRET` | K8s Secret `backend-secret` | base64-encoded string | Change before production use |
+| `AWS_REGION` | Shell / Jenkinsfile | `ap-south-1` | All resources in Mumbai |
+| `CLUSTER_NAME` | Jenkinsfile env | `three-tier-cluster` | EKS cluster name |
+| `AWS_ACCOUNT_ID` | Shell (Step 9) | Your 12-digit ID | Used for ECR URL construction |
+| `REGISTRY` | Jenkinsfile env | `<YOUR_AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com` | Set after Step 9 substitution |
+| `GIT_REPO` | Jenkinsfile env | Your GitHub repo URL | Update before first run |
+| `DB_PASSWORD` | K8s Secret `backend-secret` | Set in `k8s_manifests/database/secret.yaml` | Rotate for real deployments |
+| `JWT_SECRET` | K8s Secret `backend-secret` | Set in `k8s_manifests/database/secret.yaml` | Change before production use |
 
 ---
 
