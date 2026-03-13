@@ -410,12 +410,6 @@ if ! command -v node &>/dev/null; then
 fi
 node --version && npm --version
 
-echo "=== Installing Snyk CLI ==="
-if ! command -v snyk &>/dev/null; then
-  sudo npm install -g snyk
-fi
-snyk --version
-
 echo "=== Installing SonarScanner 5.0.1.3006 ==="
 if ! command -v sonar-scanner &>/dev/null; then
   SONAR_VERSION="5.0.1.3006"
