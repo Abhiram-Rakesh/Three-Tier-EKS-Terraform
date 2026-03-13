@@ -32,7 +32,7 @@ pipeline {
                 -Dsonar.sources=app/frontend/src,app/backend \
                 -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
                 -Dsonar.exclusions=**/node_modules/**,**/build/**,**/*.test.js \
-                -Dsonar.login=${SONAR_TOKEN}
+                -Dsonar.login=${env.SONAR_TOKEN}
             """
           }
           timeout(time: 2, unit: 'MINUTES') {
