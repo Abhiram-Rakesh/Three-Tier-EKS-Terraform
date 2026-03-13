@@ -407,6 +407,14 @@ alb    ingress.k8s.aws/alb         <none>        5s
 
 ### Step 6 — Install AWS Load Balancer Controller
 
+> **Important:** Step 5 applied `k8s_manifests/ingressclass.yaml` which already created an `IngressClass "alb"` resource. Helm cannot adopt resources it did not create, so the install will fail with an ownership error unless you delete it first:
+>
+> ```bash
+> kubectl delete ingressclass alb
+> ```
+>
+> Helm will recreate it with the correct ownership labels during the install below.
+
 ```bash
 # Get VPC ID
 VPC_ID=$(aws eks describe-cluster \
@@ -538,12 +546,31 @@ echo "ArgoCD password: ${ARGOCD_PASS}"
 kubectl apply -f argocd/application.yaml
 ```
 
-Access the ArgoCD UI:
+**Expose ArgoCD via a public LoadBalancer:**
+
+By default ArgoCD's service is `ClusterIP`. Patch it to `LoadBalancer` so you can access it directly:
 
 ```bash
-kubectl port-forward svc/argocd-server -n argocd 8443:443
-# Open https://localhost:8443 — username: admin, password: (above)
+kubectl patch svc argocd-server -n argocd \
+  -p '{"spec": {"type": "LoadBalancer"}}'
+
+# Wait for the external IP to be assigned (1-3 minutes)
+kubectl get svc argocd-server -n argocd --watch
 ```
+
+Once `EXTERNAL-IP` is populated:
+
+```bash
+ARGOCD_URL=$(kubectl get svc argocd-server -n argocd \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "ArgoCD URL: http://${ARGOCD_URL}"
+```
+
+Open `http://<ARGOCD_URL>` in your browser.
+
+Credentials:
+- Username: `admin`
+- Password: output of the `ARGOCD_PASS` command above
 
 **What ArgoCD does automatically after this:** It polls the `k8s_manifests/` path in your GitHub repo every 3 minutes. When Jenkins pushes an updated image tag (Stage 7), ArgoCD detects the commit and applies the new manifests to the cluster — completing the GitOps loop.
 
@@ -757,33 +784,7 @@ Wait ~60 seconds, then open `http://<JENKINS_IP>:9000`.
 2. Under **Generate Tokens**: Name = `jenkins-token`, Type = `User Token`
 3. Click **Generate** — **copy the token immediately** (shown only once)
 
-**Add token to Jenkins:**
-1. Jenkins → **Manage Jenkins** → **Configure System**
-2. Scroll to **SonarQube servers** section → **Add SonarQube**
-3. Name: `SonarQube`, Server URL: `http://<JENKINS_IP>:9000`
-4. Server authentication token → **Add** → **Jenkins** → Kind: **Secret text** → paste token
-5. Click **Save**
-
-✅ **Success indicator:** Jenkins can reach SonarQube — test via a pipeline run.
-
----
-
-### Step 14 — Configure Jenkins Credentials
-
-Navigate to: **Jenkins → Manage Jenkins → Credentials → System → Global credentials → Add Credentials**
-
-| ID | Kind | Value | Security Note |
-|----|------|-------|---------------|
-| `aws-access-key` | Secret text | AWS Access Key ID for `jenkins-ci` IAM user | Never use personal admin keys |
-| `aws-secret-key` | Secret text | AWS Secret Access Key for `jenkins-ci` | Rotate every 90 days |
-| `sonar-token` | Secret text | SonarQube user token from Step 13 | Regenerate if compromised |
-| `git-credentials` | Username/Password | GitHub username + PAT | PAT needs `repo` + `admin:repo_hook` scopes |
-
-✅ **Success indicator:** All 4 credentials appear in the global credentials list.
-
----
-
-### Step 15 — Install Jenkins Plugins
+**Install Jenkins plugins (do this before configuring SonarQube in Jenkins):**
 
 Navigate to: **Jenkins → Manage Jenkins → Plugins → Available plugins**
 
@@ -804,13 +805,61 @@ Search for and install each:
 - [ ] `ansicolor`
 - [ ] `workflow-aggregator`
 
-Click **Install** and wait for Jenkins to restart.
+Click **Install** and wait for Jenkins to restart. The `sonar` plugin must be installed before the SonarQube server can be configured in the next step.
 
-✅ **Success indicator:** Jenkins restarts and all 15 plugins show as **Installed**.
+✅ **Success indicator:** Jenkins restarts and all 14 plugins show as **Installed**.
+
+**Add token to Jenkins:**
+1. Jenkins → **Manage Jenkins** → **Configure System**
+2. Scroll to **SonarQube servers** section → **Add SonarQube**
+3. Name: `SonarQube`, Server URL: `http://<JENKINS_IP>:9000`
+4. Server authentication token → **Add** → **Jenkins** → Kind: **Secret text** → paste token
+5. Click **Save**
+
+**Create a webhook in SonarQube pointing back to Jenkins:**
+
+This is required for the `waitForQualityGate()` step in the Jenkinsfile to work. Without it, the pipeline will hang at the quality gate stage waiting for a callback that never arrives.
+
+1. In SonarQube, go to **Administration** → **Configuration** → **Webhooks**
+2. Click **Create**
+3. Fill in:
+   - **Name:** `Jenkins`
+   - **URL:** `http://<JENKINS_IP>:8080/sonarqube-webhook/`
+   - **Secret:** leave blank (unless you've configured one in Jenkins)
+4. Click **Create**
+
+> The trailing slash in the URL (`/sonarqube-webhook/`) is required. SonarQube will POST the analysis result to this endpoint, which unblocks the Jenkins pipeline quality gate check.
+
+✅ **Success indicator:** Jenkins can reach SonarQube — test via a pipeline run. The pipeline should proceed past Stage 1 without hanging.
 
 ---
 
-### Step 16 — Create Jenkins Pipeline Job
+### Step 14 — Configure Jenkins Credentials
+
+Navigate to: **Jenkins → Manage Jenkins → Credentials → System → Global credentials → Add Credentials**
+
+| ID | Kind | Value | Security Note |
+|----|------|-------|---------------|
+| `aws-access-key` | Secret text | AWS Access Key ID for `jenkins-ci` IAM user | Never use personal admin keys |
+| `aws-secret-key` | Secret text | AWS Secret Access Key for `jenkins-ci` | Rotate every 90 days |
+| `sonar-token` | Secret text | SonarQube user token from Step 13 | Regenerate if compromised |
+| `git-credentials` | Username/Password | GitHub username + PAT | PAT needs `repo` + `admin:repo_hook` scopes |
+
+**`jenkins-ci` IAM user — required policy:**
+
+Attach a single AWS managed policy to this user — do **not** use inline policies:
+
+| Policy Name | ARN |
+|-------------|-----|
+| `AmazonEC2ContainerRegistryPowerUser` | `arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser` |
+
+This grants `ecr:GetAuthorizationToken` plus push/pull to all repos, and intentionally excludes destructive actions like deleting repos or lifecycle policies. EKS/kubectl access is handled by the Jenkins EC2 instance profile — this user is only used for ECR.
+
+✅ **Success indicator:** All 4 credentials appear in the global credentials list.
+
+---
+
+### Step 15 — Create Jenkins Pipeline Job
 
 1. Jenkins dashboard → **New Item**
 2. Enter name: `hm-fashion-pipeline`
@@ -829,7 +878,7 @@ Click **Install** and wait for Jenkins to restart.
 
 ---
 
-### Step 17 — Configure GitHub Webhook
+### Step 16 — Configure GitHub Webhook
 
 1. Go to: `https://github.com/<YOUR_USERNAME>/Three-Tier-EKS-Terraform/settings/hooks/new`
 2. Fill in:
@@ -843,7 +892,7 @@ Click **Install** and wait for Jenkins to restart.
 
 ---
 
-### Step 18 — Trigger First Pipeline Run
+### Step 17 — Trigger First Pipeline Run
 
 ```bash
 git commit --allow-empty -m "CI: trigger first pipeline run"
@@ -867,7 +916,7 @@ After Stage 6, ArgoCD detects the new commit within 3 minutes and deploys the up
 
 ---
 
-### Step 19 — Install Monitoring Stack
+### Step 18 — Install Monitoring Stack
 
 ```bash
 kubectl create namespace monitoring
@@ -882,23 +931,34 @@ helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
   --values monitoring/prometheus-values.yaml \
   --wait
 
-# Install Grafana with LoadBalancer
+# Install Grafana
 helm upgrade --install grafana grafana/grafana \
   --namespace monitoring \
   --values monitoring/grafana-values.yaml \
   --wait
-
-# Get Grafana external URL
-kubectl get svc -n monitoring grafana
 ```
 
-Expected:
-```
-NAME      TYPE           CLUSTER-IP     EXTERNAL-IP                                    PORT(S)
-grafana   LoadBalancer   172.20.x.x     abc123.elb.ap-south-1.amazonaws.com           80:30xxx/TCP
+**Accessing Grafana:**
+
+Grafana is configured as a `LoadBalancer` service. Wait for the NLB to be assigned (can take 2-5 minutes after the Helm install):
+
+```bash
+kubectl get svc grafana -n monitoring --watch
 ```
 
-Open `http://<EXTERNAL-IP>` → login with `admin` / (password from `monitoring/grafana-values.yaml` or the one you configured)
+Once `EXTERNAL-IP` is populated:
+
+```bash
+GRAFANA_URL=$(kubectl get svc grafana -n monitoring \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+echo "Grafana URL: http://${GRAFANA_URL}"
+```
+
+Open `http://<GRAFANA_URL>` in your browser.
+
+Credentials:
+- Username: `admin`
+- Password: the value you set for `adminPassword` in `monitoring/grafana-values.yaml`
 
 Pre-imported dashboards (under **H&M Shop** folder):
 - Kubernetes Cluster (6417)
@@ -910,7 +970,7 @@ Pre-imported dashboards (under **H&M Shop** folder):
 
 ---
 
-### Step 20 — Access the Application
+### Step 19 — Access the Application
 
 ```bash
 # Get the ALB URL
@@ -1221,7 +1281,39 @@ kubectl get hpa -n hm-shop
 
 ---
 
-### 7. GitHub Webhook returns 404
+### 7. Jenkins triggers infinite build loop
+
+**Symptom:** After a successful pipeline run, Jenkins immediately starts another build. This keeps looping because Stage 6 (GitOps) commits updated image tags back to GitHub, which re-triggers the webhook.
+
+**Why:** Jenkins does not natively honor the `[skip ci]` convention in commit messages — that is a GitHub Actions feature. The webhook fires on every push, including the one Jenkins itself makes.
+
+**Fix:** Add a commit message check at the very top of the `pipeline` block in the `Jenkinsfile`:
+
+```groovy
+pipeline {
+  agent any
+  stages {
+    stage('Check Skip CI') {
+      steps {
+        script {
+          def commitMsg = sh(script: 'git log -1 --pretty=%B', returnStdout: true).trim()
+          if (commitMsg.contains('[skip ci]')) {
+            currentBuild.result = 'SUCCESS'
+            error('Skipping CI — commit message contains [skip ci]')
+          }
+        }
+      }
+    }
+    // ... rest of your stages
+  }
+}
+```
+
+This causes the pipeline to exit cleanly (not fail) whenever it detects its own tag-update commit, breaking the loop.
+
+---
+
+### 8. GitHub Webhook returns 404
 
 **Symptom:** GitHub webhook delivery shows red ✗ with 404 response.
 
