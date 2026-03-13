@@ -8,9 +8,11 @@ metadata:
 spec:
   project: default
   source:
-    repoURL:        https://github.com/Abhiram-Rakesh/three-tier-eks-iac.git
+    repoURL:        https://github.com/<YOUR_GITHUB_USERNAME>/<YOUR_REPO_NAME>.git
     targetRevision: main
     path:           k8s_manifests
+    directory:
+      recurse: true
   destination:
     server:    https://kubernetes.default.svc
     namespace: hm-shop

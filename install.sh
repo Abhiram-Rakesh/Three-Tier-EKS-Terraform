@@ -123,8 +123,8 @@ phase_preflight() {
     success "GitHub: ${GITHUB_USER}/${GITHUB_REPO}"
   else
     warn "No git remote configured. GitOps push will be skipped."
-    GITHUB_USER="<YOUR_USERNAME>"
-    GITHUB_REPO="three-tier-eks-iac"
+    GITHUB_USER="<YOUR_GITHUB_USERNAME>"
+    GITHUB_REPO="<YOUR_REPO_NAME>"
   fi
 
   if [[ "${DRY_RUN}" == "false" ]]; then
@@ -181,11 +181,12 @@ phase_terraform() {
   cd "${SCRIPT_DIR}"
 
   info "Injecting AWS Account ID into K8s manifests..."
-  find "${K8S_DIR}" -name "*.yaml" -exec sed -i "s|<ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" {} \;
-  find "${K8S_DIR}" -name "*.yaml" -exec sed -i "s|ap-south-1\.amazonaws\.com/hm-|${AWS_ACCOUNT_ID}.dkr.ecr.ap-south-1.amazonaws.com/hm-|g" {} \; 2>/dev/null || true
-  sed -i "s|<YOUR_USERNAME>|${GITHUB_USER}|g" "${ARGOCD_DIR}/application.yaml" 2>/dev/null || true
-  sed -i "s|<YOUR_USERNAME>|${GITHUB_USER}|g" Jenkinsfile 2>/dev/null || true
-  sed -i "s|<ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" Jenkinsfile 2>/dev/null || true
+  find "${K8S_DIR}" -name "*.yaml" -exec sed -i "s|<YOUR_AWS_ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" {} \;
+  sed -i "s|<YOUR_GITHUB_USERNAME>|${GITHUB_USER}|g"   "${ARGOCD_DIR}/application.yaml" 2>/dev/null || true
+  sed -i "s|<YOUR_REPO_NAME>|${GITHUB_REPO}|g"         "${ARGOCD_DIR}/application.yaml" 2>/dev/null || true
+  sed -i "s|<YOUR_AWS_ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" Jenkinsfile 2>/dev/null || true
+  sed -i "s|<YOUR_GITHUB_USERNAME>|${GITHUB_USER}|g"   Jenkinsfile 2>/dev/null || true
+  sed -i "s|<YOUR_REPO_NAME>|${GITHUB_REPO}|g"         Jenkinsfile 2>/dev/null || true
 
   info "Committing manifest updates to git..."
   git add "${K8S_DIR}/" "${ARGOCD_DIR}/" Jenkinsfile 2>/dev/null || true
@@ -402,13 +403,6 @@ if ! command -v kubectl &>/dev/null; then
   rm kubectl
 fi
 kubectl version --client
-
-echo "=== Installing Node.js 18 ==="
-if ! command -v node &>/dev/null; then
-  curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-  sudo apt-get install -y nodejs
-fi
-node --version && npm --version
 
 echo "=== Installing SonarScanner 5.0.1.3006 ==="
 if ! command -v sonar-scanner &>/dev/null; then
