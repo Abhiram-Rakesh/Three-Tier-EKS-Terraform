@@ -2,7 +2,7 @@ pipeline {
   agent any
 
   environment {
-    REGISTRY          = "<YOUR_AWS_ACCOUNT_ID>.dkr.ecr.ap-south-1.amazonaws.com"
+    REGISTRY          = "567776770107.dkr.ecr.ap-south-1.amazonaws.com"
     FRONTEND_IMAGE    = "${REGISTRY}/hm-frontend"
     BACKEND_IMAGE     = "${REGISTRY}/hm-backend"
     AWS_REGION        = "ap-south-1"
