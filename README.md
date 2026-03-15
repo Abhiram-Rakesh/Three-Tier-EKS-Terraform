@@ -558,8 +558,11 @@ java -version
 
 **Jenkins:**
 ```bash
-curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | sudo tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
-echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+# The jenkins.io-2023.key URL is outdated — Jenkins rotated their signing key.
+# Fetch the actual key used to sign the repo directly from a keyserver.
+gpg --keyserver keyserver.ubuntu.com --recv-keys 5E386EADB55F01504CAE8BCF7198F4B714ABFC68
+gpg --export 5E386EADB55F01504CAE8BCF7198F4B714ABFC68 | sudo tee /usr/share/keyrings/jenkins-keyring.gpg > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.gpg] https://pkg.jenkins.io/debian-stable binary/" | sudo tee /etc/apt/sources.list.d/jenkins.list > /dev/null
 sudo apt-get update && sudo apt-get install -y jenkins
 sudo systemctl enable jenkins && sudo systemctl start jenkins
 sudo systemctl status jenkins
