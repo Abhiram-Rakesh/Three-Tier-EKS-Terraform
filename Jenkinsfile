@@ -118,6 +118,10 @@ pipeline {
                   --username AWS \
                   --password-stdin ${REGISTRY}
 
+            echo "Re-tagging :latest from versioned tags (defensive)..."
+            docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} ${FRONTEND_IMAGE}:latest
+            docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER}  ${BACKEND_IMAGE}:latest
+
             echo "Pushing frontend image..."
             docker push ${FRONTEND_IMAGE}:${BUILD_NUMBER}
             docker push ${FRONTEND_IMAGE}:latest
