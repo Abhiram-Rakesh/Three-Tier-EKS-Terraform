@@ -977,16 +977,32 @@ helm uninstall aws-load-balancer-controller -n kube-system
 # 2. Delete namespaces (triggers ALB + EBS cleanup)
 kubectl delete namespace hm-shop argocd monitoring --timeout=120s
 
-# 3. Wait for EBS volumes to detach before Terraform runs
-# (otherwise TF destroy fails because VPC has attached resources)
+# 3. Wait for ALBs/NLBs to be deleted and ENIs to detach
+# Kubernetes-managed LBs create ENIs in the VPC subnets.
+# Terraform cannot delete the VPC while those ENIs still exist.
+echo "Waiting for load balancer ENIs to be released (60s)..."
 sleep 60
 
-# 4. Terraform destroy
+# 4. Verify no leftover ENIs remain in the VPC before destroying
+VPC_ID=$(cd terraform && terraform output -raw vpc_id 2>/dev/null || aws ec2 describe-vpcs --region ap-south-1 --filters "Name=tag:Name,Values=hm-shop-vpc" --query "Vpcs[0].VpcId" --output text)
+
+LEFTOVER_ENIS=$(aws ec2 describe-network-interfaces --region ap-south-1 --filters "Name=vpc-id,Values=${VPC_ID}" "Name=status,Values=available,in-use" --query "NetworkInterfaces[?Attachment.InstanceId==null].NetworkInterfaceId" --output text)
+
+if [ -n "$LEFTOVER_ENIS" ]; then
+  echo "Found leftover ENIs — deleting: $LEFTOVER_ENIS"
+  for ENI in $LEFTOVER_ENIS; do
+    aws ec2 delete-network-interface --region ap-south-1 --network-interface-id $ENI && echo "Deleted $ENI"
+  done
+else
+  echo "No leftover ENIs — safe to destroy."
+fi
+
+# 5. Terraform destroy
 cd terraform
 terraform destroy -auto-approve
 ```
 
-> **Why order matters:** Terraform cannot delete the VPC while ALBs or EBS volumes are still attached to it. Helm + namespace deletion must happen first to release those resources cleanly.
+> **Why order matters:** Terraform cannot delete the VPC while ALBs, NLBs, or their ENIs are still attached to subnets. The ALB Controller and Grafana NLB each create ENIs that outlive the Kubernetes objects if not given enough time to clean up. Steps 3–4 ensure all ENIs are gone before Terraform attempts VPC deletion.
 
 ---
 
