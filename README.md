@@ -444,8 +444,7 @@ export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output tex
 export GITHUB_USER=<YOUR_USERNAME>
 
 # Replace in all K8s manifests
-find k8s_manifests/ -name "*.yaml" -exec \
-  sed -i "s|<YOUR_AWS_ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" {} \;
+find k8s_manifests/ -name "*.yaml" -exec sed -i "s|<YOUR_AWS_ACCOUNT_ID>|${AWS_ACCOUNT_ID}|g" {} \;
 
 # Replace GitHub username in ArgoCD application
 sed -i "s|<YOUR_USERNAME>|${GITHUB_USER}|g" argocd/application.yaml
