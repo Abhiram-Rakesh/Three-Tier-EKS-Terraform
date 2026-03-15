@@ -579,6 +579,12 @@ docker --version
 # Docker version 24.x.x
 ```
 
+> **Important:** `usermod` only takes effect in new login sessions. After running the commands above, **exit and re-SSH** into the instance before running any `docker` commands, otherwise you'll get a `permission denied` error on `/var/run/docker.sock`.
+> ```bash
+> exit
+> ssh -i hm-eks-key.pem ubuntu@<JENKINS_IP>
+> ```
+
 **AWS CLI v2:**
 ```bash
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
